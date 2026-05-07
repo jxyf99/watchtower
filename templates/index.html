@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Watchtower</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="{{ url_for('index') }}">
+            <span class="brand-mark">W</span>
+            <span>Watchtower</span>
+        </a>
+        <form action="{{ url_for('check_all_monitors') }}" method="post">
+            <button class="button button-secondary" type="submit">Run all checks</button>
+        </form>
+    </header>
+
+    <main class="shell">
+        <section class="hero">
+            <p class="eyebrow">Uptime monitoring</p>
+            <h1>Know when your apps go quiet.</h1>
+            <p class="lede">Track websites, status codes, response times, and recent incidents from one clean dashboard.</p>
+        </section>
+
+        <section class="stats-grid" aria-label="Monitor stats">
+            <article class="stat-card">
+                <span>Total</span>
+                <strong>{{ stats.total }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Up</span>
+                <strong>{{ stats.up }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Warnings</span>
+                <strong>{{ stats.warning }}</strong>
+            </article>
+            <article class="stat-card">
+                <span>Down</span>
+                <strong>{{ stats.down }}</strong>
+            </article>
+        </section>
+
+        <div class="layout">
+            <section class="panel">
+                <div class="panel-heading">
+                    <h2>Add monitor</h2>
+                </div>
+                <form class="stack" action="{{ url_for('create_monitor') }}" method="post">
+                    <label>
+                        Name
+                        <input name="name" placeholder="Portfolio" required>
+                    </label>
+                    <label>
+                        Website URL
+                        <input name="url" placeholder="https://jxyf99.github.io/portfolio/" required>
+                    </label>
+                    <label>
+                        Expected status
+                        <input name="expected_status" type="number" min="100" max="599" value="200">
+                    </label>
+                    <button class="button" type="submit">Add and check</button>
+                </form>
+            </section>
+
+            <section class="panel wide">
+                <div class="panel-heading">
+                    <h2>Monitors</h2>
+                    <span>{{ stats.total }} tracked</span>
+                </div>
+
+                {% if monitors %}
+                    <div class="monitor-list">
+                        {% for monitor in monitors %}
+                            <article class="monitor-card">
+                                <div>
+                                    <div class="monitor-title">
+                                        <span class="status-dot {{ monitor.latest_status or 'unknown' }}"></span>
+                                        <h3>{{ monitor.name }}</h3>
+                                    </div>
+                                    <a href="{{ monitor.url }}" target="_blank" rel="noreferrer">{{ monitor.url }}</a>
+                                    <p>{{ monitor.latest_message or 'No checks have been run yet.' }}</p>
+                                </div>
+                                <div class="monitor-meta">
+                                    <span class="pill {{ monitor.latest_status or 'unknown' }}">{{ monitor.latest_status or 'new' }}</span>
+                                    <span>{{ monitor.latest_status_code or '-' }} status</span>
+                                    <span>{{ monitor.latest_response_time_ms or '-' }} ms</span>
+                                    <div class="actions">
+                                        <form action="{{ url_for('check_monitor', monitor_id=monitor.id) }}" method="post">
+                                            <button class="button button-small" type="submit">Check</button>
+                                        </form>
+                                        <form action="{{ url_for('delete_monitor', monitor_id=monitor.id) }}" method="post">
+                                            <button class="button button-small button-danger" type="submit">Delete</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty">Add your first monitor to start tracking uptime.</p>
+                {% endif %}
+            </section>
+        </div>
+
+        <section class="panel">
+            <div class="panel-heading">
+                <h2>Recent checks</h2>
+                <span>Last 12 results</span>
+            </div>
+            {% if checks %}
+                <div class="timeline">
+                    {% for check in checks %}
+                        <article class="timeline-item">
+                            <span class="status-dot {{ check.status }}"></span>
+                            <div>
+                                <strong>{{ check.monitor_name }}</strong>
+                                <p>{{ check.message }}</p>
+                            </div>
+                            <div class="timeline-meta">
+                                <span>{{ check.status_code or '-' }}</span>
+                                <span>{{ check.response_time_ms or '-' }} ms</span>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="empty">Checks will show up here after you add a monitor.</p>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

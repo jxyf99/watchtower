@@ -1,0 +1,60 @@
+# Watchtower
+
+A simple Flask uptime monitoring MVP for tracking websites, response times, status codes, and recent incidents.
+
+## Features
+
+- Add websites to monitor
+- Run a check for one website or all websites
+- Store check history in SQLite
+- Show current up, warning, and down counts
+- Clean responsive dashboard UI
+
+## Run Locally
+
+1. Create a virtual environment:
+
+   ```powershell
+   python -m venv .venv
+   ```
+
+2. Activate it:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+   If PowerShell blocks activation, use:
+
+   ```powershell
+   .\.venv\Scripts\activate.bat
+   ```
+
+3. Install dependencies:
+
+   ```powershell
+   pip install -r requirements.txt
+   ```
+
+4. Start the app:
+
+   ```powershell
+   python app.py
+   ```
+
+5. Open the local app:
+
+   ```text
+   http://127.0.0.1:5000
+   ```
+
+## Test URLs
+
+- `https://jxyf99.github.io/portfolio/`
+- `https://phishcheck-qnp6.onrender.com`
+- `https://bugboard-no3e.onrender.com`
+- `https://example.com`
+
+## Notes
+
+This MVP only checks websites when you click a button. A future version could add scheduled background checks, email alerts, team accounts, charts, and hosted deployment.
