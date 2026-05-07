@@ -39,13 +39,13 @@ A simple Flask uptime monitoring MVP for tracking websites, response times, stat
 4. Start the app:
 
    ```powershell
-   python app.py
+   python run_dev.py
    ```
 
 5. Open the local app:
 
    ```text
-   http://127.0.0.1:5000
+   http://127.0.0.1:5002
    ```
 
 ## Test URLs
