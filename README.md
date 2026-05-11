@@ -58,3 +58,9 @@ A simple Flask uptime monitoring MVP for tracking websites, response times, stat
 ## Notes
 
 This MVP only checks websites when you click a button. A future version could add scheduled background checks, email alerts, team accounts, charts, and hosted deployment.
+
+## Security Notes
+
+- Set `SECRET_KEY` in Render environment variables so CSRF/session protection uses a production secret.
+- Watchtower only allows public `http` and `https` targets on ports 80 and 443.
+- Localhost, private networks, link-local metadata addresses, internal hostnames, embedded credentials, and unsafe redirects are blocked before checks run.

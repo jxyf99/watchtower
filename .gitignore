@@ -3,5 +3,14 @@ __pycache__/
 *.pyc
 watchtower.db
 .env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.log
+*.pem
+*.key
+secrets/
+credentials/
 server.log
 server.err

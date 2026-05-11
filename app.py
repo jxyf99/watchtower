@@ -1,17 +1,32 @@
 import os
+import hmac
+import ipaddress
+import secrets
+import socket
 import sqlite3
 import time
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, abort, g, redirect, render_template, request, session, url_for
 
 
 DATABASE = os.environ.get("DATABASE_PATH", "watchtower.db")
 REQUEST_TIMEOUT_SECONDS = 8
+MAX_REDIRECTS = 3
+MAX_NAME_LENGTH = 120
+ALLOWED_SCHEMES = {"http", "https"}
+ALLOWED_PORTS = {80, 443}
+BLOCKED_HOST_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home")
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("RENDER") == "true",
+)
 
 
 def get_db():
@@ -58,6 +73,45 @@ def init_db():
 @app.before_request
 def before_request():
     init_db()
+    if request.method == "POST":
+        validate_csrf_token()
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), geolocation=(), microphone=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "style-src 'self'; "
+        "img-src 'self' data:; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+    return response
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": csrf_token}
+
+
+def csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+def validate_csrf_token():
+    expected = session.get("_csrf_token")
+    supplied = request.form.get("_csrf_token", "")
+    if not expected or not hmac.compare_digest(expected, supplied):
+        abort(400)
 
 
 def now_iso():
@@ -74,6 +128,83 @@ def normalize_url(raw_url):
     return url
 
 
+def validate_public_http_url(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in ALLOWED_SCHEMES or not parsed.hostname:
+        return False, "Only http and https URLs can be monitored."
+
+    if parsed.username or parsed.password:
+        return False, "URLs with embedded credentials are not allowed."
+
+    try:
+        port = parsed.port
+    except ValueError:
+        return False, "The URL port is invalid."
+
+    if port and port not in ALLOWED_PORTS:
+        return False, "Only standard web ports 80 and 443 are allowed."
+
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith(BLOCKED_HOST_SUFFIXES):
+        return False, "Local and internal hostnames are not allowed."
+
+    try:
+        addresses = socket.getaddrinfo(hostname, port or default_port(parsed.scheme), type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return False, "The hostname could not be resolved."
+
+    if not addresses:
+        return False, "The hostname could not be resolved."
+
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if not is_public_ip(ip):
+            return False, "Private, local, reserved, and metadata network addresses are not allowed."
+
+    return True, ""
+
+
+def default_port(scheme):
+    return 443 if scheme == "https" else 80
+
+
+def is_public_ip(ip):
+    return all(
+        not flag
+        for flag in (
+            ip.is_loopback,
+            ip.is_link_local,
+            ip.is_private,
+            ip.is_reserved,
+            ip.is_multicast,
+            ip.is_unspecified,
+        )
+    )
+
+
+def safe_get(url):
+    current_url = url
+    for _ in range(MAX_REDIRECTS + 1):
+        is_valid, message = validate_public_http_url(current_url)
+        if not is_valid:
+            raise ValueError(message)
+
+        response = requests.get(
+            current_url,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            allow_redirects=False,
+            headers={"User-Agent": "Watchtower-MVP/1.0"},
+        )
+
+        if response.is_redirect and response.headers.get("Location"):
+            current_url = urljoin(current_url, response.headers["Location"])
+            continue
+
+        return response
+
+    raise ValueError("Too many redirects.")
+
+
 def classify_check(status_code, expected_status):
     if status_code == expected_status:
         return "up", "Website returned the expected status code."
@@ -85,15 +216,13 @@ def classify_check(status_code, expected_status):
 def run_check(monitor):
     started = time.perf_counter()
     try:
-        response = requests.get(
-            monitor["url"],
-            timeout=REQUEST_TIMEOUT_SECONDS,
-            allow_redirects=True,
-            headers={"User-Agent": "Watchtower-MVP/1.0"},
-        )
+        response = safe_get(monitor["url"])
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         status, message = classify_check(response.status_code, monitor["expected_status"])
         save_check(monitor["id"], status, response.status_code, elapsed_ms, message)
+    except ValueError as exc:
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        save_check(monitor["id"], "down", None, elapsed_ms, f"Blocked unsafe target: {exc}")
     except requests.RequestException as exc:
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         save_check(monitor["id"], "down", None, elapsed_ms, f"Request failed: {exc}")
@@ -160,16 +289,23 @@ def index():
 
 @app.post("/monitors")
 def create_monitor():
-    name = request.form.get("name", "").strip()
+    name = request.form.get("name", "").strip()[:MAX_NAME_LENGTH]
     url = normalize_url(request.form.get("url", ""))
     expected_status = request.form.get("expected_status", "200").strip()
 
     if not name or not url:
         return redirect(url_for("index"))
 
+    is_valid, _message = validate_public_http_url(url)
+    if not is_valid:
+        return redirect(url_for("index"))
+
     try:
         expected_status_int = int(expected_status)
     except ValueError:
+        expected_status_int = 200
+
+    if not 100 <= expected_status_int <= 599:
         expected_status_int = 200
 
     db = get_db()

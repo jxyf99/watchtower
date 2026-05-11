@@ -21,6 +21,7 @@
             <span>{{ stats.down }} down</span>
         </div>
         <form action="{{ url_for('check_all_monitors') }}" method="post">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <button class="button button-secondary" type="submit">Sweep network</button>
         </form>
     </header>
@@ -65,6 +66,7 @@
                     </div>
                 </div>
                 <form class="stack" action="{{ url_for('create_monitor') }}" method="post">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                     <label>
                         Name
                         <input name="name" placeholder="Portfolio" required>
@@ -108,9 +110,11 @@
                                     <span>{{ monitor.latest_response_time_ms or '-' }}ms</span>
                                     <div class="actions">
                                         <form action="{{ url_for('check_monitor', monitor_id=monitor.id) }}" method="post">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                                             <button class="button button-small" type="submit">Ping</button>
                                         </form>
                                         <form action="{{ url_for('delete_monitor', monitor_id=monitor.id) }}" method="post">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                                             <button class="button button-small button-danger" type="submit">Delete</button>
                                         </form>
                                     </div>
